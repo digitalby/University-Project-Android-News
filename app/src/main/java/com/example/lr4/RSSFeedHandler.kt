@@ -1,6 +1,7 @@
 package com.example.lr4
 
 import android.util.Log
+import androidx.core.content.ContextCompat
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 
@@ -43,8 +44,15 @@ class RSSFeedHandler: DefaultHandler() {
     override fun endElement(uri: String?, localName: String?, qName: String?) {
         when(qName) {
             "item" -> {
-                if(item != null)
-                    feed?.items?.add(item!!)
+                if(this.item != null) {
+                    val item = RSSItem(
+                        this.item!!.title,
+                        this.item!!.description,
+                        this.item!!.link,
+                        this.item!!.pubDate
+                    )
+                    feed?.items?.add(item)
+                }
             }
         }
     }
@@ -71,9 +79,15 @@ class RSSFeedHandler: DefaultHandler() {
             }
             isDescription -> {
                 if(string.startsWith("<"))
-                    item?.description = ("No description available.")
-                else
-                    item?.description = string
+                    item?.description = "No description available."
+                else {
+                    val newString = string.replace(Regex("<[^>]*>"), "").trim()
+                    item?.description =
+                        if(newString.isEmpty())
+                            "No description available."
+                        else
+                            newString
+                }
                 isDescription = false
             }
             isPubDate -> {

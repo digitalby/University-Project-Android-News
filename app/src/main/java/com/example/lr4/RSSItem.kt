@@ -5,11 +5,13 @@ import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.*
 
-class RSSItem {
-    var title: String? = null
-    var description: String? = null
-    var link: String? = null
+class RSSItem(
+    var title: String? = null,
+    var description: String? = null,
+    var link: String? = null,
     var pubDate: String? = null
+) {
+
     val pubDateWithFormat: String?
     get() {
         try {
