@@ -4,5 +4,5 @@
     <color name="colorPrimaryDark">#b71c1c</color>
     <color name="colorAccent">#00d2e1</color>
     <color name="colorListItemSecondaryText">#BBB</color>
-    <color name="colorListItemPrimaryText">#333</color>
+    <color name="colorListItemPrimaryText">#333333</color>
 </resources>

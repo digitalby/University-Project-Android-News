@@ -10,7 +10,7 @@ import javax.xml.parsers.SAXParserFactory
 
 class FileIO(private val context: Context) {
     companion object {
-        private const val URL_STRING = "http://rss.cnn.com/rss/edition_world.rss"
+        private const val URL_STRING = "https://www.nbcnewyork.com/news/politics/?rss=y&embedThumb=y&summary=y"
         private const val FILENAME = "news_feed.xml"
     }
 

@@ -16,6 +16,7 @@ class RSSFeedHandler: DefaultHandler() {
     private var isDescription = false
     private var isLink = false
     private var isPubDate = false
+    private var isMediaContent = false
 
     override fun startDocument() {
         feed = RSSFeed(ArrayList())
@@ -33,11 +34,14 @@ class RSSFeedHandler: DefaultHandler() {
         attributes: Attributes?
     ) {
         when(qName) {
-            "item" -> RSSItem()
+            "item" -> item = RSSItem()
             "title" -> isTitle = true
             "description" -> isDescription = true
             "link" -> isLink = true
             "pubDate" -> isPubDate = true
+            "photo:thumbnail" -> {
+                isMediaContent = true
+            }
         }
     }
 
@@ -49,7 +53,8 @@ class RSSFeedHandler: DefaultHandler() {
                         this.item!!.title,
                         this.item!!.description,
                         this.item!!.link,
-                        this.item!!.pubDate
+                        this.item!!.pubDate,
+                        this.item!!.thumbnailURL
                     )
                     feed?.items?.add(item)
                 }
@@ -78,26 +83,34 @@ class RSSFeedHandler: DefaultHandler() {
                 isLink = false
             }
             isDescription -> {
-                if(string.startsWith("<"))
-                    item?.description = "No description available."
-                else {
-                    val newString = string.replace(Regex("<[^>]*>"), "").trim()
-                    item?.description =
-                        if(newString.isEmpty())
-                            "No description available."
-                        else
-                            newString
-                }
+                val newString = string
+                    .replaceFirst(Regex("<br\\s*/>"), "")
+                    .replace(Regex("<br\\s*/>"), "\n")
+                    .replace(Regex("<[^>]*>"), "")
+                    .replace(Regex("&\\w+;"), "")
+                    .trim()
+                item?.description =
+                    if(newString.isEmpty())
+                        "No description available."
+                    else
+                        newString
                 isDescription = false
             }
             isPubDate -> {
-                if(didReadFeedPubDate)
+                if(didReadFeedPubDate) {
                     item?.pubDate = string
+                    if(string.length <= 20)
+                        item?.pubDate = feed?.pubDate
+                }
                 else {
                     feed?.pubDate = string
                     didReadFeedPubDate = true
                 }
                 isPubDate = false
+            }
+            isMediaContent -> {
+                item?.thumbnailURL = string
+                isMediaContent = false
             }
         }
     }
