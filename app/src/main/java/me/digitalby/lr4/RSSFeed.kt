@@ -1,4 +1,4 @@
-package com.example.lr4
+package me.digitalby.lr4
 
 import java.lang.RuntimeException
 import java.text.ParseException

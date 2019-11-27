@@ -1,4 +1,4 @@
-package com.example.lr4
+package me.digitalby.lr4
 
 import android.content.Intent
 import android.net.Uri
@@ -10,6 +10,7 @@ import android.widget.SimpleAdapter
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import me.digitalby.lr4.R
 import com.squareup.picasso.Picasso
 import com.squareup.picasso.RequestCreator
 import kotlinx.android.synthetic.main.activity_main.*
@@ -71,7 +72,12 @@ class MainActivity : AppCompatActivity() {
 
         val itemResource = R.layout.listview_item
         val from = arrayOf("date", "title", "description", "imageURL")
-        val to = intArrayOf(R.id.textViewPubDate, R.id.textViewTitle, R.id.textViewDescription, R.id.imageDocumentIcon)
+        val to = intArrayOf(
+            R.id.textViewPubDate,
+            R.id.textViewTitle,
+            R.id.textViewDescription,
+            R.id.imageDocumentIcon
+        )
 
         val adapter = SimpleAdapter(this, arrayList, itemResource, from, to)
         itemsListView.adapter = adapter
@@ -80,13 +86,15 @@ class MainActivity : AppCompatActivity() {
             when{
                 view.id == R.id.imageDocumentIcon -> {
                     val imageView = view as ImageView
-                    DownloadImage(this).execute(Pair(imageView, textRepresentation))
+                    DownloadImage(this)
+                        .execute(Pair(imageView, textRepresentation))
                     true
                 }
                 view.id in arrayOf(
                     R.id.textViewPubDate,
                     R.id.textViewTitle,
-                    R.id.textViewDescription) -> {
+                    R.id.textViewDescription
+                ) -> {
                     val textView = view as TextView
                     textView.text = textRepresentation
                     true
@@ -126,6 +134,8 @@ class MainActivity : AppCompatActivity() {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
+
+            //TODO: test internet connection
             activity.pullToRefresh.isRefreshing = true
         }
 

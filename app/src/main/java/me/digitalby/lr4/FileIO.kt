@@ -1,4 +1,4 @@
-package com.example.lr4
+package me.digitalby.lr4
 
 import android.content.Context
 import android.util.Log

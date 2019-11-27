@@ -1,7 +1,6 @@
-package com.example.lr4
+package me.digitalby.lr4
 
 import android.util.Log
-import androidx.core.content.ContextCompat
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
 
