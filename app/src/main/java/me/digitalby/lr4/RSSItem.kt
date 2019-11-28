@@ -1,5 +1,6 @@
 package me.digitalby.lr4
 
+import android.graphics.Bitmap
 import java.lang.RuntimeException
 import java.text.ParseException
 import java.text.SimpleDateFormat
@@ -11,7 +12,8 @@ class RSSItem(
     var link: String? = null,
     var pubDate: String? = null,
     var thumbnailURL: String? = null,
-    var cachedContent: String? = null
+    var cachedContent: String? = null,
+    var image: Bitmap? = null
 ) {
 
     val pubDateWithFormat: String?

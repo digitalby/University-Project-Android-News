@@ -2,6 +2,7 @@ package me.digitalby.lr4
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.AsyncTask
@@ -16,7 +17,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.snackbar.Snackbar
 import com.squareup.picasso.Picasso
-import com.squareup.picasso.RequestCreator
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.*
 import java.lang.ref.WeakReference
@@ -31,6 +31,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var titleTextView: TextView
     private lateinit var itemsListView: ListView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
+    private lateinit var adapter: SimpleAdapter
+    private val arrayList = ArrayList<HashMap<String, Any?>>()
+
+    fun updateArrayList() {
+        arrayList.clear()
+        for (item in feed!!.items) {
+            val map = HashMap<String, Any?>()
+            map["date"] = item.pubDateWithFormat
+            map["title"] = item.title
+            map["description"] = item.description
+            map["image"] = item.image
+            arrayList.add(map)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +69,40 @@ class MainActivity : AppCompatActivity() {
             refreshNow(this)
         }
 
+        val itemResource = R.layout.listview_item
+        val from = arrayOf("date", "title", "description", "image")
+        val to = intArrayOf(
+            R.id.textViewPubDate,
+            R.id.textViewTitle,
+            R.id.textViewDescription,
+            R.id.imageDocumentIcon
+        )
+
+        adapter = SimpleAdapter(this, arrayList, itemResource, from, to)
+        itemsListView.adapter = adapter
+
+        adapter.setViewBinder { view, data, textRepresentation ->
+            when{
+                view.id == R.id.imageDocumentIcon -> {
+                    val imageView = view as ImageView
+                    val image = data as Bitmap?
+                    if(image != null)
+                        imageView.setImageBitmap(image)
+                    true
+                }
+                view.id in arrayOf(
+                    R.id.textViewPubDate,
+                    R.id.textViewTitle,
+                    R.id.textViewDescription
+                ) -> {
+                    val textView = view as TextView
+                    textView.text = textRepresentation
+                    true
+                }
+                else -> false
+            }
+        }
+
         io = FileIO(applicationContext)
         refreshNow(this)
     }
@@ -74,6 +122,8 @@ class MainActivity : AppCompatActivity() {
             ).show()
             swipeRefreshLayout.isRefreshing = false
         }
+
+
     }
 
     private fun updateDisplay() {
@@ -88,74 +138,56 @@ class MainActivity : AppCompatActivity() {
         val feed = this.feed!!
 
         titleTextView.text = feed.title
-        val items = feed.items
 
-        val arrayList = ArrayList<HashMap<String, String?>>()
-        for(item in items) {
-            val map = HashMap<String, String?>()
-            map["date"] = item.pubDateWithFormat
-            map["title"] = item.title
-            map["description"] = item.description
-            map["imageURL"] = item.thumbnailURL
-            arrayList.add(map)
-        }
-
-        val itemResource = R.layout.listview_item
-        val from = arrayOf("date", "title", "description", "imageURL")
-        val to = intArrayOf(
-            R.id.textViewPubDate,
-            R.id.textViewTitle,
-            R.id.textViewDescription,
-            R.id.imageDocumentIcon
-        )
-
-        val adapter = SimpleAdapter(this, arrayList, itemResource, from, to)
-        itemsListView.adapter = adapter
-
-        adapter.setViewBinder { view, data, textRepresentation ->
-            when{
-                view.id == R.id.imageDocumentIcon -> {
-                    val imageView = view as ImageView
-                    DownloadImage(this)
-                        .execute(Pair(imageView, textRepresentation))
-                    true
-                }
-                view.id in arrayOf(
-                    R.id.textViewPubDate,
-                    R.id.textViewTitle,
-                    R.id.textViewDescription
-                ) -> {
-                    val textView = view as TextView
-                    textView.text = textRepresentation
-                    true
-                }
-                else -> false
-            }
-        }
-        if(!feed.offlineAvailable)
-            DownloadPages(this).execute()
+        updateArrayList()
+        adapter.notifyDataSetChanged()
     }
 
-    private class DownloadImage(context: MainActivity) : AsyncTask<Pair<ImageView, String>, Unit, Pair<RequestCreator, ImageView>>() {
+    private fun precacheResources() {
+        Snackbar.make(
+            itemsListView as View,
+            getString(R.string.precaching_started), Snackbar.LENGTH_LONG
+        ).show()
+
+        for(i in 0 until feed!!.items.size) {
+            val item = feed!!.items.elementAt(i)
+            if(item.image == null)
+                DownloadImage(this).execute(i)
+            if (!feed!!.offlineAvailable) {
+                DownloadPage(this).execute(item)
+            }
+        }
+        updateArrayList()
+        adapter.notifyDataSetChanged()
+    }
+
+    private class DownloadImage(context: MainActivity) : AsyncTask<Int, Unit, Unit>() {
         private val activityReference: WeakReference<MainActivity> = WeakReference(context)
 
-        override fun doInBackground(vararg params: Pair<ImageView, String>?): Pair<RequestCreator, ImageView>? {
+        override fun doInBackground(vararg params: Int?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
-                return null
-            val pair = params[0]!!
-            return Pair(Picasso.get()
-                .load(Uri.parse(pair.second))
+                return
+            val index = params[0]!!
+            val item = activity.feed?.items?.elementAt(index)
+            item?.image = Picasso.get()
+                .load(item?.thumbnailURL)
                 .noFade()
                 .resize(96, 96)
                 .centerInside()
-                .placeholder(R.drawable.newspaper), pair.first)
+                .placeholder(R.drawable.newspaper)
+                .get()
         }
 
-        override fun onPostExecute(result: Pair<RequestCreator, ImageView>?) {
-            if(result == null)
+        override fun onPostExecute(result: Unit) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
                 return
-            result.first.into(result.second)
+            val adapter = activity.itemsListView.adapter as SimpleAdapter
+            activity.updateArrayList()
+            adapter.notifyDataSetChanged()
+            //result.second.setImageBitmap(result.first)
+            //result.first.into(result.second)
         }
     }
 
@@ -204,69 +236,61 @@ class MainActivity : AppCompatActivity() {
                 return
             activity.updateDisplay()
             activity.pullToRefresh.isRefreshing = false
+            activity.precacheResources()
         }
     }
 
-    private class DownloadPages(context: MainActivity) : AsyncTask<Unit, Unit, Unit>() {
+    private class DownloadPage(context: MainActivity) : AsyncTask<RSSItem, Unit, Unit>() {
         private val activityReference: WeakReference<MainActivity> = WeakReference(context)
 
-        override fun onPreExecute() {
+        override fun doInBackground(vararg params: RSSItem?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
-            Snackbar.make(
-                activity.itemsListView as View,
-                activity.getString(R.string.precaching_started), Snackbar.LENGTH_LONG
-            ).show()
-        }
 
-        override fun doInBackground(vararg params: Unit?) {
-            val activity = activityReference.get()
-            if (activity == null || activity.isFinishing)
-                return
-            for(entity in activity.feed!!.items) {
-                val link = entity.link ?: continue
-                try
-                {
-                    var url = URL(link)
-                    var urlConnection = url.openConnection()
-                    var httpURLConnection = urlConnection as HttpURLConnection
-                    httpURLConnection.instanceFollowRedirects = true
-                    var responseCode = httpURLConnection.responseCode
-                    while (responseCode in 301 until 401) {
-                        val redirectHeader = httpURLConnection.getHeaderField("Location")
-                        if(redirectHeader.isNullOrEmpty()) {
-                            Log.e("News app", "Can't redirect")
-                            continue
-                        }
-                        httpURLConnection.disconnect()
-                        url = URL(redirectHeader)
-                        urlConnection = url.openConnection()
-                        httpURLConnection = urlConnection as HttpURLConnection
-                        responseCode = httpURLConnection.responseCode
+            val entity = params[0] ?: return
+            val link = entity.link ?: return
+            try
+            {
+                var url = URL(link)
+                var urlConnection = url.openConnection()
+                var httpURLConnection = urlConnection as HttpURLConnection
+                httpURLConnection.instanceFollowRedirects = true
+                var responseCode = httpURLConnection.responseCode
+                while (responseCode in 301 until 401) {
+                    val redirectHeader = httpURLConnection.getHeaderField("Location")
+                    if(redirectHeader.isNullOrEmpty()) {
+                        Log.e("News app", "Can't redirect")
+                        continue
                     }
-                    val inputStream = httpURLConnection.inputStream
-                    val bufferedInputStream = BufferedInputStream(inputStream)
-
-                    val data = bufferedInputStream.readBytes()
-                    val stringData = data.toString(Charset.defaultCharset())
-                    entity.cachedContent = stringData
-                } catch (e: MalformedURLException) {
-                } catch (e: IOException) {
+                    httpURLConnection.disconnect()
+                    url = URL(redirectHeader)
+                    urlConnection = url.openConnection()
+                    httpURLConnection = urlConnection as HttpURLConnection
+                    responseCode = httpURLConnection.responseCode
                 }
+                val inputStream = httpURLConnection.inputStream
+                val bufferedInputStream = BufferedInputStream(inputStream)
+
+                val data = bufferedInputStream.readBytes()
+                val stringData = data.toString(Charset.defaultCharset())
+                entity.cachedContent = stringData
+            } catch (e: MalformedURLException) {
+            } catch (e: IOException) {
             }
         }
+            //TODO save the cached version
 
         override fun onPostExecute(result: Unit?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
-            Snackbar.make(
-                activity.itemsListView as View,
-                activity.getString(R.string.precaching_complete), Snackbar.LENGTH_LONG
-            ).show()
-            //TODO handle image loading and precaching
-            //TODO save the cached version
+            if (activity.feed!!.offlineAvailable) {
+                Snackbar.make(
+                    activity.itemsListView as View,
+                    activity.getString(R.string.precaching_complete), Snackbar.LENGTH_LONG
+                ).show()
+            }
         }
 
     }
