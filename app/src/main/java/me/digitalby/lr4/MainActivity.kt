@@ -1,20 +1,29 @@
 package me.digitalby.lr4
 
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.AsyncTask
 import android.os.Bundle
+import android.util.Log
+import android.view.View
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.SimpleAdapter
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import me.digitalby.lr4.R
+import com.google.android.material.snackbar.Snackbar
 import com.squareup.picasso.Picasso
 import com.squareup.picasso.RequestCreator
 import kotlinx.android.synthetic.main.activity_main.*
+import java.io.*
 import java.lang.ref.WeakReference
+import java.net.HttpURLConnection
+import java.net.MalformedURLException
+import java.net.URL
+import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity() {
     private var feed: RSSFeed? = RSSFeed(ArrayList())
@@ -32,6 +41,7 @@ class MainActivity : AppCompatActivity() {
         swipeRefreshLayout = findViewById(R.id.pullToRefresh)
 
         itemsListView.setOnItemClickListener { _, _, position, _ ->
+            //TODO webview support
             if(this.feed == null)
                 return@setOnItemClickListener
             val feed = this.feed!!
@@ -42,17 +52,37 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
         swipeRefreshLayout.setOnRefreshListener {
-            DownloadFeed(this).execute()
+            refreshNow(this)
         }
 
         io = FileIO(applicationContext)
+        refreshNow(this)
+    }
 
-        DownloadFeed(this).execute()
+    private fun refreshNow(context: Context) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkInfo = connectivityManager.activeNetworkInfo
+
+        if (networkInfo != null && networkInfo.isConnected) {
+            DownloadFeed(this).execute()
+        } else {
+            //TODO: check if a cached version is available
+            titleTextView.text = getString(R.string.no_connection)
+            Snackbar.make(
+                itemsListView as View,
+                getString(R.string.no_connection_long), Snackbar.LENGTH_LONG
+            ).show()
+            swipeRefreshLayout.isRefreshing = false
+        }
     }
 
     private fun updateDisplay() {
         if(this.feed == null) {
             titleTextView.text = getString(R.string.no_rss_feed)
+            Snackbar.make(
+                itemsListView as View,
+                getString(R.string.no_rss_feed_long), Snackbar.LENGTH_LONG
+            ).show()
             return
         }
         val feed = this.feed!!
@@ -102,6 +132,8 @@ class MainActivity : AppCompatActivity() {
                 else -> false
             }
         }
+        if(!feed.offlineAvailable)
+            DownloadPages(this).execute()
     }
 
     private class DownloadImage(context: MainActivity) : AsyncTask<Pair<ImageView, String>, Unit, Pair<RequestCreator, ImageView>>() {
@@ -135,7 +167,6 @@ class MainActivity : AppCompatActivity() {
             if (activity == null || activity.isFinishing)
                 return
 
-            //TODO: test internet connection
             activity.pullToRefresh.isRefreshing = true
         }
 
@@ -163,7 +194,8 @@ class MainActivity : AppCompatActivity() {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
-            activity.feed = activity.io.readFile()
+            val newFeed = activity.io.readFile()
+            activity.feed = newFeed
         }
 
         override fun onPostExecute(result: Unit) {
@@ -173,5 +205,69 @@ class MainActivity : AppCompatActivity() {
             activity.updateDisplay()
             activity.pullToRefresh.isRefreshing = false
         }
+    }
+
+    private class DownloadPages(context: MainActivity) : AsyncTask<Unit, Unit, Unit>() {
+        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
+
+        override fun onPreExecute() {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            Snackbar.make(
+                activity.itemsListView as View,
+                activity.getString(R.string.precaching_started), Snackbar.LENGTH_LONG
+            ).show()
+        }
+
+        override fun doInBackground(vararg params: Unit?) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            for(entity in activity.feed!!.items) {
+                val link = entity.link ?: continue
+                try
+                {
+                    var url = URL(link)
+                    var urlConnection = url.openConnection()
+                    var httpURLConnection = urlConnection as HttpURLConnection
+                    httpURLConnection.instanceFollowRedirects = true
+                    var responseCode = httpURLConnection.responseCode
+                    while (responseCode in 301 until 401) {
+                        val redirectHeader = httpURLConnection.getHeaderField("Location")
+                        if(redirectHeader.isNullOrEmpty()) {
+                            Log.e("News app", "Can't redirect")
+                            continue
+                        }
+                        httpURLConnection.disconnect()
+                        url = URL(redirectHeader)
+                        urlConnection = url.openConnection()
+                        httpURLConnection = urlConnection as HttpURLConnection
+                        responseCode = httpURLConnection.responseCode
+                    }
+                    val inputStream = httpURLConnection.inputStream
+                    val bufferedInputStream = BufferedInputStream(inputStream)
+
+                    val data = bufferedInputStream.readBytes()
+                    val stringData = data.toString(Charset.defaultCharset())
+                    entity.cachedContent = stringData
+                } catch (e: MalformedURLException) {
+                } catch (e: IOException) {
+                }
+            }
+        }
+
+        override fun onPostExecute(result: Unit?) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            Snackbar.make(
+                activity.itemsListView as View,
+                activity.getString(R.string.precaching_complete), Snackbar.LENGTH_LONG
+            ).show()
+            //TODO handle image loading and precaching
+            //TODO save the cached version
+        }
+
     }
 }

@@ -10,7 +10,8 @@ class RSSItem(
     var description: String? = null,
     var link: String? = null,
     var pubDate: String? = null,
-    var thumbnailURL: String? = null
+    var thumbnailURL: String? = null,
+    var cachedContent: String? = null
 ) {
 
     val pubDateWithFormat: String?

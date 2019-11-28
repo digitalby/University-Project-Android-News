@@ -6,6 +6,7 @@ import org.xml.sax.InputSource
 import java.io.IOException
 import java.lang.Exception
 import java.net.URL
+import java.util.zip.Checksum
 import javax.xml.parsers.SAXParserFactory
 
 class FileIO(private val context: Context) {
