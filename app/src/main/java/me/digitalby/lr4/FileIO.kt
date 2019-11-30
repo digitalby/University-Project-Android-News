@@ -3,8 +3,10 @@ package me.digitalby.lr4
 import android.content.Context
 import android.util.Log
 import org.xml.sax.InputSource
+import java.io.File
 import java.io.IOException
 import java.lang.Exception
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.Checksum
 import javax.xml.parsers.SAXParserFactory
@@ -15,10 +17,12 @@ class FileIO(private val context: Context) {
         private const val FILENAME = "news_feed.xml"
     }
 
-    fun downloadFile() {
+    fun downloadFile(): Boolean {
         try {
             val url = URL(URL_STRING)
-            val inputStream = url.openStream()
+            val urlConnection = url.openConnection()
+            val inputStream = urlConnection.getInputStream()
+
             val fileOutputStream = context.openFileOutput(FILENAME, Context.MODE_PRIVATE)
 
             val bytes = inputStream.readBytes()
@@ -26,8 +30,12 @@ class FileIO(private val context: Context) {
 
             inputStream.close()
             fileOutputStream.close()
+            return true
         } catch (e: IOException) {
-            Log.e("News reader", e.toString())
+            val fileOutputStream = context.openFileOutput(FILENAME, Context.MODE_PRIVATE)
+            val bytes = byteArrayOf()
+            fileOutputStream.write(bytes)
+            return false
         }
     }
 
@@ -43,6 +51,7 @@ class FileIO(private val context: Context) {
             val inputStream = context.openFileInput(FILENAME)
             val inputSource = InputSource(inputStream)
             xmlReader.parse(inputSource)
+
 
             return rssHandler.feed
         } catch (e: Exception) {

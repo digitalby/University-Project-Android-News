@@ -4,7 +4,8 @@
     <string name="no_rss_feed">No feed</string>
     <string name="no_description">No description available.</string>
     <string name="no_connection">No Connection</string>
-    <string name="no_connection_long">There is no internet connection.</string>
+    <string name="no_connection_long">Offline mode (no cached version available).</string>
+    <string name="cached_only">Offline mode (cached only).</string>
     <string name="no_rss_feed_long">The feed that you\'ve provided is invalid.</string>
     <string name="precaching_started">Precaching started…</string>
     <string name="precaching_complete">Precaching complete.</string>

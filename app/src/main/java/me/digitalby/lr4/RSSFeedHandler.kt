@@ -3,6 +3,9 @@ package me.digitalby.lr4
 import android.util.Log
 import org.xml.sax.Attributes
 import org.xml.sax.helpers.DefaultHandler
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.collections.ArrayList
 
 class RSSFeedHandler: DefaultHandler() {
     var feed: RSSFeed? = null; private set
@@ -23,7 +26,8 @@ class RSSFeedHandler: DefaultHandler() {
     }
 
     override fun endDocument() {
-
+        val format = SimpleDateFormat("EEE, dd MMM yyyy HH:mm", Locale.getDefault())
+        feed?.lastRetrieved = format.format(Date())
     }
 
     override fun startElement(

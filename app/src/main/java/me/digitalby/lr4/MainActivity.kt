@@ -3,10 +3,12 @@ package me.digitalby.lr4
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.AsyncTask
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
@@ -26,22 +28,22 @@ import java.net.URL
 import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity() {
-    private var feed: RSSFeed? = RSSFeed(ArrayList())
+    private var feed: RSSFeed? = null
     private lateinit var io: FileIO
     private lateinit var titleTextView: TextView
     private lateinit var itemsListView: ListView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var adapter: SimpleAdapter
-    private val arrayList = ArrayList<HashMap<String, Any?>>()
+    private val arrayList = ArrayList<HashMap<String, String?>>()
 
     fun updateArrayList() {
         arrayList.clear()
         for (item in feed!!.items) {
-            val map = HashMap<String, Any?>()
+            val map = HashMap<String, String?>()
             map["date"] = item.pubDateWithFormat
             map["title"] = item.title
             map["description"] = item.description
-            map["image"] = item.image
+            map["image"] = item.thumbnailURI
             arrayList.add(map)
         }
     }
@@ -85,9 +87,12 @@ class MainActivity : AppCompatActivity() {
             when{
                 view.id == R.id.imageDocumentIcon -> {
                     val imageView = view as ImageView
-                    val image = data as Bitmap?
-                    if(image != null)
-                        imageView.setImageBitmap(image)
+                    if(!textRepresentation.isNullOrEmpty()) {
+                        val inputStream = FileInputStream(File(textRepresentation))
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        imageView.setImageBitmap(bitmap)
+                        inputStream.close()
+                    }
                     true
                 }
                 view.id in arrayOf(
@@ -104,7 +109,46 @@ class MainActivity : AppCompatActivity() {
         }
 
         io = FileIO(applicationContext)
-        refreshNow(this)
+        val feed = loadFeed()
+        if(feed == null) {
+            refreshNow(this)
+        } else {
+            this.feed = feed
+            updateDisplay()
+            Snackbar.make(
+                itemsListView as View,
+                "Last retrieved: ${feed.lastRetrieved}", Snackbar.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun loadFeed(): RSSFeed? {
+        return try {
+            val fileInputStream = openFileInput("feed.lr4")
+            val objectInputStream = ObjectInputStream(fileInputStream)
+            val feed = objectInputStream.readObject() as RSSFeed?
+            objectInputStream.close()
+            fileInputStream.close()
+            feed
+        } catch (e: FileNotFoundException) {
+            null
+        }
+    }
+
+    private fun saveFeed() {
+        try {
+            val fileOutputStream = openFileOutput("feed.lr4", Context.MODE_PRIVATE)
+            val objectOutputStream = ObjectOutputStream(fileOutputStream)
+            objectOutputStream.writeObject(feed)
+            objectOutputStream.close()
+            fileOutputStream.close()
+        } catch(e: InvalidClassException) {
+            Log.e("News app save feed", "The class is not valid. $e")
+        } catch (e: NotSerializableException) {
+            Log.e("News app save feed", "The class is not serializable. $e")
+        } catch (e: IOException) {
+            Log.e("News app save feed", "$e")
+        }
     }
 
     private fun refreshNow(context: Context) {
@@ -114,16 +158,27 @@ class MainActivity : AppCompatActivity() {
         if (networkInfo != null && networkInfo.isConnected) {
             DownloadFeed(this).execute()
         } else {
-            //TODO: check if a cached version is available
+            tryLoadOffline()
+        }
+    }
+
+    private fun tryLoadOffline() {
+        val feed = this.feed?: loadFeed()
+        if(feed != null && feed.offlineAvailable) {
+            this.feed = feed
+            updateDisplay()
+            Snackbar.make(
+                itemsListView as View,
+                getString(R.string.cached_only), Snackbar.LENGTH_LONG
+            ).show()
+        } else {
             titleTextView.text = getString(R.string.no_connection)
             Snackbar.make(
                 itemsListView as View,
                 getString(R.string.no_connection_long), Snackbar.LENGTH_LONG
             ).show()
-            swipeRefreshLayout.isRefreshing = false
         }
-
-
+        swipeRefreshLayout.isRefreshing = false
     }
 
     private fun updateDisplay() {
@@ -146,54 +201,35 @@ class MainActivity : AppCompatActivity() {
     private fun precacheResources() {
         Snackbar.make(
             itemsListView as View,
-            getString(R.string.precaching_started), Snackbar.LENGTH_LONG
+            getString(R.string.precaching_started),
+            Snackbar.LENGTH_LONG
         ).show()
-
         for(i in 0 until feed!!.items.size) {
             val item = feed!!.items.elementAt(i)
-            if(item.image == null)
+            if(item.thumbnailURI.isNullOrEmpty())
                 DownloadImage(this).execute(i)
-            if (!feed!!.offlineAvailable) {
+            if (item.cachedContent.isNullOrEmpty()) {
                 DownloadPage(this).execute(item)
             }
         }
+    }
+
+    private fun tryFinishPrecaching() {
+        if(!feed!!.offlineAvailable)
+            return
         updateArrayList()
         adapter.notifyDataSetChanged()
+        saveFeed()
+        Snackbar.make(
+            itemsListView as View,
+            getString(R.string.precaching_complete),
+            Snackbar.LENGTH_LONG
+        ).show()
     }
 
-    private class DownloadImage(context: MainActivity) : AsyncTask<Int, Unit, Unit>() {
+    private class DownloadFeed(context: MainActivity) : AsyncTask<String, Unit, Unit>() {
+
         private val activityReference: WeakReference<MainActivity> = WeakReference(context)
-
-        override fun doInBackground(vararg params: Int?) {
-            val activity = activityReference.get()
-            if (activity == null || activity.isFinishing)
-                return
-            val index = params[0]!!
-            val item = activity.feed?.items?.elementAt(index)
-            item?.image = Picasso.get()
-                .load(item?.thumbnailURL)
-                .noFade()
-                .resize(96, 96)
-                .centerInside()
-                .placeholder(R.drawable.newspaper)
-                .get()
-        }
-
-        override fun onPostExecute(result: Unit) {
-            val activity = activityReference.get()
-            if (activity == null || activity.isFinishing)
-                return
-            val adapter = activity.itemsListView.adapter as SimpleAdapter
-            activity.updateArrayList()
-            adapter.notifyDataSetChanged()
-            //result.second.setImageBitmap(result.first)
-            //result.first.into(result.second)
-        }
-    }
-
-    private class DownloadFeed(context: MainActivity) : AsyncTask<String, Unit, String>() {
-        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
-
         override fun onPreExecute() {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
@@ -202,26 +238,34 @@ class MainActivity : AppCompatActivity() {
             activity.pullToRefresh.isRefreshing = true
         }
 
-        override fun doInBackground(vararg params: String?): String {
+        override fun doInBackground(vararg params: String?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
-                return ""
-            activity.io.downloadFile()
-            return ""
+                return
+            val download = activity.io.downloadFile()
+            if(!download)
+                cancel(true)
+
         }
 
-        override fun onPostExecute(result: String?) {
-            super.onPostExecute(result)
+        override fun onPostExecute(result: Unit) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
             ReadFeed(activity).execute()
         }
+
+
+        override fun onCancelled() {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            activity.tryLoadOffline()
+        }
     }
-
     private class ReadFeed(context: MainActivity) : AsyncTask<Unit, Unit, Unit>() {
-        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
 
+        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
         override fun doInBackground(vararg params: Unit) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
@@ -236,13 +280,49 @@ class MainActivity : AppCompatActivity() {
                 return
             activity.updateDisplay()
             activity.pullToRefresh.isRefreshing = false
-            activity.precacheResources()
+            if(activity.feed != null)
+                activity.precacheResources()
+        }
+
+    }
+
+    private class DownloadImage(context: MainActivity) : AsyncTask<Int, Unit, Unit>() {
+        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
+
+        override fun doInBackground(vararg params: Int?) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            val index = params[0]!!
+            val item = activity.feed?.items?.elementAt(index)
+            val image = Picasso.get()
+                .load(item?.thumbnailURL)
+                .noFade()
+                .resize(96, 96)
+                .centerInside()
+                .placeholder(R.drawable.newspaper)
+                .get()
+            val fileOutputStream = activity.openFileOutput("$index.png", Context.MODE_PRIVATE)
+            image.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
+            val file = File("$index.png")
+            item?.thumbnailURI = "${activity.filesDir.absolutePath}/${file.path}"
+            fileOutputStream.close()
+        }
+
+        override fun onPostExecute(result: Unit) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            val adapter = activity.itemsListView.adapter as SimpleAdapter
+            activity.updateArrayList()
+            adapter.notifyDataSetChanged()
+            activity.tryFinishPrecaching()
         }
     }
 
     private class DownloadPage(context: MainActivity) : AsyncTask<RSSItem, Unit, Unit>() {
-        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
 
+        private val activityReference: WeakReference<MainActivity> = WeakReference(context)
         override fun doInBackground(vararg params: RSSItem?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
@@ -279,19 +359,14 @@ class MainActivity : AppCompatActivity() {
             } catch (e: IOException) {
             }
         }
-            //TODO save the cached version
 
         override fun onPostExecute(result: Unit?) {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
-            if (activity.feed!!.offlineAvailable) {
-                Snackbar.make(
-                    activity.itemsListView as View,
-                    activity.getString(R.string.precaching_complete), Snackbar.LENGTH_LONG
-                ).show()
-            }
+            activity.tryFinishPrecaching()
         }
-
     }
+
 }
+
