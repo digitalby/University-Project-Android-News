@@ -11,8 +11,6 @@ class RSSFeed(val items: ArrayList<RSSItem>): Serializable {
         for(item in items) {
             if(item.cachedContent.isNullOrEmpty())
                 return false
-            if(item.thumbnailURI.isNullOrEmpty())
-                return false
         }
         return true
     }

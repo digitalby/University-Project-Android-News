@@ -2,19 +2,23 @@ package me.digitalby.lr4
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Uri
+import android.opengl.Visibility
 import android.os.AsyncTask
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
-import android.widget.ImageView
-import android.widget.ListView
-import android.widget.SimpleAdapter
-import android.widget.TextView
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.snackbar.Snackbar
 import com.squareup.picasso.Picasso
@@ -29,24 +33,17 @@ import java.nio.charset.Charset
 class MainActivity : AppCompatActivity() {
     private var feed: RSSFeed? = null
     private var offlineMode = true
+    private var itemsCached = 0
     private lateinit var io: FileIO
+
     private lateinit var titleTextView: TextView
     private lateinit var itemsListView: ListView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
-    private lateinit var adapter: SimpleAdapter
-    private val arrayList = ArrayList<HashMap<String, String?>>()
+    private lateinit var progressBar: ProgressBar
 
-    fun updateArrayList() {
-        arrayList.clear()
-        for (item in feed!!.items) {
-            val map = HashMap<String, String?>()
-            map["date"] = item.pubDateWithFormat
-            map["title"] = item.title
-            map["description"] = item.description
-            map["image"] = item.thumbnailURI
-            arrayList.add(map)
-        }
-    }
+    private lateinit var adapter: SimpleAdapter
+    private lateinit var sharedPreferences: SharedPreferences
+    private val arrayList = ArrayList<HashMap<String, String?>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +52,7 @@ class MainActivity : AppCompatActivity() {
         titleTextView = findViewById(R.id.titleTextView)
         itemsListView = findViewById(R.id.list)
         swipeRefreshLayout = findViewById(R.id.pullToRefresh)
+        progressBar = findViewById(R.id.progressBar)
 
         itemsListView.setOnItemClickListener { _, _, position, _ ->
             if(this.feed == null)
@@ -73,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         swipeRefreshLayout.setOnRefreshListener {
-            refreshNow(this)
+            refreshNow()
         }
 
         val itemResource = R.layout.listview_item
@@ -88,11 +86,13 @@ class MainActivity : AppCompatActivity() {
         adapter = SimpleAdapter(this, arrayList, itemResource, from, to)
         itemsListView.adapter = adapter
 
-        adapter.setViewBinder { view, data, textRepresentation ->
+        adapter.setViewBinder { view, _, textRepresentation ->
             when{
                 view.id == R.id.imageDocumentIcon -> {
                     val imageView = view as ImageView
-                    if(!textRepresentation.isNullOrEmpty()) {
+                    if (textRepresentation.isNullOrEmpty()) {
+                        imageView.setImageDrawable(ContextCompat.getDrawable(this, R.drawable.newspaper))
+                    } else {
                         val inputStream = FileInputStream(File(textRepresentation))
                         val bitmap = BitmapFactory.decodeStream(inputStream)
                         imageView.setImageBitmap(bitmap)
@@ -113,18 +113,65 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        sharedPreferences = getSharedPreferences("me.digitalby.lr4", Context.MODE_PRIVATE)
+
+        val savedURL = sharedPreferences.getString("url", null)
+
         io = FileIO(applicationContext)
-        val feed = loadFeed()
-        if(feed == null) {
-            refreshNow(this)
+
+        if(savedURL.isNullOrEmpty()) {
+            requestNewFeedURL(true)
         } else {
-            this.feed = feed
-            updateDisplay()
-            Snackbar.make(
-                itemsListView as View,
-                "Last retrieved: ${feed.lastRetrieved}", Snackbar.LENGTH_LONG
-            ).show()
+            val feed = loadFeed()
+            if (feed == null) {
+                refreshNow()
+            } else {
+                this.feed = feed
+                updateDisplay()
+                Snackbar.make(
+                    itemsListView as View,
+                    "Last retrieved: ${feed.lastRetrieved}", Snackbar.LENGTH_LONG
+                ).show()
+            }
         }
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if(item.itemId == R.id.buttonChangeURL)
+            requestNewFeedURL(false)
+        return super.onOptionsItemSelected(item)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    private fun requestNewFeedURL(mandatory: Boolean) {
+        val builder = AlertDialog.Builder(this)
+        val inputView = EditText(this)
+        inputView.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        builder.setMessage("Enter URL for your desired RSS feed")
+            .setTitle("New RSS feed")
+            .setView(inputView)
+            .setPositiveButton(getString(android.R.string.ok)) { _, _ ->
+                val newURL = inputView.text.toString()
+                if(newURL.isEmpty())
+                    requestNewFeedURL(mandatory)
+                else {
+                    val edit = sharedPreferences.edit()
+                    edit.putString("url", newURL)
+                    edit.apply()
+                    refreshNow()
+                }
+            }
+        if(mandatory) {
+            builder.setCancelable(false)
+        } else {
+            builder.setNegativeButton(getString(android.R.string.cancel)) { _, _ -> }
+        }
+        val dialog = builder.create()
+        dialog.show()
     }
 
     private fun loadFeed(): RSSFeed? {
@@ -156,8 +203,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun refreshNow(context: Context) {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private fun refreshNow() {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val networkInfo = connectivityManager.activeNetworkInfo
 
         if (networkInfo != null && networkInfo.isConnected) {
@@ -204,17 +251,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun precacheResources() {
-        Snackbar.make(
-            itemsListView as View,
-            getString(R.string.precaching_started),
-            Snackbar.LENGTH_LONG
-        ).show()
+        itemsCached = 0
+        progressBar.visibility = View.VISIBLE
+        progressBar.progress = 0
         for(i in 0 until feed!!.items.size) {
             val item = feed!!.items.elementAt(i)
             if(item.thumbnailURI.isNullOrEmpty())
                 DownloadImage(this).execute(i)
             if (item.cachedContent.isNullOrEmpty()) {
                 DownloadPage(this).execute(item)
+            } else {
+                itemsCached += 1
             }
         }
     }
@@ -225,11 +272,24 @@ class MainActivity : AppCompatActivity() {
         updateArrayList()
         adapter.notifyDataSetChanged()
         saveFeed()
+        progressBar.visibility = View.GONE
         Snackbar.make(
             itemsListView as View,
             getString(R.string.precaching_complete),
             Snackbar.LENGTH_LONG
         ).show()
+    }
+
+    fun updateArrayList() {
+        arrayList.clear()
+        for (item in feed!!.items) {
+            val map = HashMap<String, String?>()
+            map["date"] = item.pubDateWithFormat
+            map["title"] = item.title
+            map["description"] = item.description
+            map["image"] = item.thumbnailURI
+            arrayList.add(map)
+        }
     }
 
     private class DownloadFeed(context: MainActivity) : AsyncTask<String, Unit, Unit>() {
@@ -247,7 +307,8 @@ class MainActivity : AppCompatActivity() {
             val activity = activityReference.get()
             if (activity == null || activity.isFinishing)
                 return
-            val download = activity.io.downloadFile()
+            val url = activity.sharedPreferences.getString("url", null)
+            val download = activity.io.downloadFile(url)
             if(!download)
                 cancel(true)
 
@@ -309,11 +370,13 @@ class MainActivity : AppCompatActivity() {
                 .centerInside()
                 .placeholder(R.drawable.newspaper)
                 .get()
-            val fileOutputStream = activity.openFileOutput("$index.png", Context.MODE_PRIVATE)
-            image.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
-            val file = File("$index.png")
-            item?.thumbnailURI = "${activity.filesDir.absolutePath}/${file.path}"
-            fileOutputStream.close()
+            if(image != null) {
+                val fileOutputStream = activity.openFileOutput("$index.png", Context.MODE_PRIVATE)
+                image.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
+                val file = File("$index.png")
+                item?.thumbnailURI = "${activity.filesDir.absolutePath}/${file.path}"
+                fileOutputStream.close()
+            }
         }
 
         override fun onPostExecute(result: Unit) {
@@ -323,12 +386,10 @@ class MainActivity : AppCompatActivity() {
             val adapter = activity.itemsListView.adapter as SimpleAdapter
             activity.updateArrayList()
             adapter.notifyDataSetChanged()
-            activity.tryFinishPrecaching()
         }
     }
 
-    private class DownloadPage(context: MainActivity) : AsyncTask<RSSItem, Unit, Unit>() {
-
+    private class DownloadPage(context: MainActivity) : AsyncTask<RSSItem, Int, Unit>() {
         private val activityReference: WeakReference<MainActivity> = WeakReference(context)
         override fun doInBackground(vararg params: RSSItem?) {
             val activity = activityReference.get()
@@ -365,6 +426,8 @@ class MainActivity : AppCompatActivity() {
             } catch (e: MalformedURLException) {
             } catch (e: IOException) {
             }
+            activity.itemsCached += 1
+            publishProgress(activity.itemsCached * 100 / activity.feed!!.items.count())
         }
 
         override fun onPostExecute(result: Unit?) {
@@ -372,6 +435,13 @@ class MainActivity : AppCompatActivity() {
             if (activity == null || activity.isFinishing)
                 return
             activity.tryFinishPrecaching()
+        }
+
+        override fun onProgressUpdate(vararg values: Int?) {
+            val activity = activityReference.get()
+            if (activity == null || activity.isFinishing)
+                return
+            activity.progressBar.progress = values[0]!!
         }
     }
 

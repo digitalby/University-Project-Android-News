@@ -13,13 +13,15 @@ import javax.xml.parsers.SAXParserFactory
 
 class FileIO(private val context: Context) {
     companion object {
-        private const val URL_STRING = "https://www.nbcnewyork.com/news/politics/?rss=y&embedThumb=y&summary=y"
+        //private const val URL_STRING = "https://www.nbcnewyork.com/news/politics/?rss=y&embedThumb=y&summary=y"
         private const val FILENAME = "news_feed.xml"
     }
 
-    fun downloadFile(): Boolean {
+    fun downloadFile(urlString: String?): Boolean {
+        if(urlString.isNullOrEmpty())
+            return false
         try {
-            val url = URL(URL_STRING)
+            val url = URL(urlString)
             val urlConnection = url.openConnection()
             val inputStream = urlConnection.getInputStream()
 
