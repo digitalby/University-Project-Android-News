@@ -1,8 +1,6 @@
 package me.digitalby.lr4
 
-import android.graphics.Bitmap
 import java.io.Serializable
-import java.lang.RuntimeException
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.*
@@ -16,7 +14,6 @@ class RSSItem(
     var cachedContent: String? = null,
     var thumbnailURI: String? = null
 ): Serializable {
-
     val pubDateWithFormat: String?
     get() {
         try {
@@ -31,5 +28,4 @@ class RSSItem(
 
     private val outputFormat = SimpleDateFormat("EEEE h:mm a (MMM d)", Locale.getDefault())
     private val inputFormat = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.getDefault())
-
 }

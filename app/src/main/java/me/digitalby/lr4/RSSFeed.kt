@@ -1,12 +1,6 @@
 package me.digitalby.lr4
 
 import java.io.Serializable
-import java.lang.RuntimeException
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.*
-import java.util.zip.Checksum
-import kotlin.collections.ArrayList
 
 class RSSFeed(val items: ArrayList<RSSItem>): Serializable {
     var title: String? = null

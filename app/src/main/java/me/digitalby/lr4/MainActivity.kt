@@ -8,7 +8,6 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.AsyncTask
 import android.os.Bundle
-import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
@@ -29,6 +28,7 @@ import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity() {
     private var feed: RSSFeed? = null
+    private var offlineMode = true
     private lateinit var io: FileIO
     private lateinit var titleTextView: TextView
     private lateinit var itemsListView: ListView
@@ -57,15 +57,20 @@ class MainActivity : AppCompatActivity() {
         swipeRefreshLayout = findViewById(R.id.pullToRefresh)
 
         itemsListView.setOnItemClickListener { _, _, position, _ ->
-            //TODO webview support
             if(this.feed == null)
                 return@setOnItemClickListener
             val feed = this.feed!!
             val item = feed.items[position]
 
-            val uri = Uri.parse(item.link)
-            val intent = Intent(Intent.ACTION_VIEW, uri)
-            startActivity(intent)
+            if(offlineMode) {
+                val intent = Intent(this, WebViewActivity::class.java)
+                intent.putExtra("item", item)
+                startActivity(intent)
+            } else {
+                val uri = Uri.parse(item.link)
+                val intent = Intent(Intent.ACTION_VIEW, uri)
+                startActivity(intent)
+            }
         }
         swipeRefreshLayout.setOnRefreshListener {
             refreshNow(this)
@@ -280,8 +285,10 @@ class MainActivity : AppCompatActivity() {
                 return
             activity.updateDisplay()
             activity.pullToRefresh.isRefreshing = false
-            if(activity.feed != null)
+            if(activity.feed != null) {
+                activity.offlineMode = false
                 activity.precacheResources()
+            }
         }
 
     }
