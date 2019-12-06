@@ -60,13 +60,13 @@ class MainActivity : AppCompatActivity() {
             val feed = this.feed!!
             val item = feed.items[position]
 
-            if(offlineMode) {
-                val intent = Intent(this, WebViewActivity::class.java)
-                intent.putExtra("item", item)
-                startActivity(intent)
-            } else {
+            if (item.cachedContent.isNullOrEmpty()) {
                 val uri = Uri.parse(item.link)
                 val intent = Intent(Intent.ACTION_VIEW, uri)
+                startActivity(intent)
+            } else {
+                val intent = Intent(this, WebViewActivity::class.java)
+                intent.putExtra("item", item)
                 startActivity(intent)
             }
         }
